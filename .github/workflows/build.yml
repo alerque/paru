@@ -2,10 +2,34 @@ name: Build Release
 on:
   push:
     tags:
-      - v*
+      - v[0-9]+.[0-9]+.[0-9]+
 
 jobs:
-  build-releases:
+
+  create-release:
+    name: Create release from this build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Read info
+        run: |
+          echo "TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Generate release changelog
+        run: |
+          sed -ne '/v1.7.3/,/^## /{/^## /d;p}' CHANGELOG.md |
+            sed -e '1d;$d' > CHANGELOG-${{ env.TAG }}.md
+      - name: Create (draft) release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          prerelease: false
+          body_path: CHANGELOG-${{ env.TAG }}.md
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  deploy-builds:
+    needs: [ create-release ]
     strategy:
       matrix:
         arch:
@@ -31,72 +55,23 @@ jobs:
         id: tags
         shell: bash
         run: |
-          arch="${{ matrix.arch }}"
-          echo ::set-output name=PLATFORM::${arch%% *}
-          echo ::set-output name=ARCH::${arch##* }
       - name: Build ${{ matrix.arch }} release
         shell: bash
         run: |
+          TAG=${GITHUB_REF#refs/*/}
           arch="${{ matrix.arch }}"
-          PLATFORM=${arch%% *}
-          ARCH=${arch##* }
-          mkdir artifacts
+          PLATFORM="${arch%% *}"
+          ARCH="${arch##* }"
           docker buildx build --platform $PLATFORM \
-          --tag paru:$ARCH \
-          --load \
-          .
+            --tag paru:$ARCH \
+            --load \
+            .
           docker create --name paru-$ARCH paru:$ARCH
-          docker cp paru-$ARCH:/app/paru.tar.zst paru-$ARCH.tar.zst
-          docker container rm paru-$ARCH
-          mv paru-*.tar.zst artifacts
-      - uses: actions/upload-artifact@v2
+          docker cp paru-$ARCH:/app/paru.tar.zst paru-$TAG-$ARCH.tar.zst
+      - name: Attach ${{ matrix.arch }} build to release
+        uses: svenstaro/upload-release-action@v2
         with:
-          name: paru-${{ steps.tags.outputs.arch }}
-          path: artifacts
-
-  create_release:
-    name: Create release from this build
-    needs: [build-releases]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Read info
-        id: tags
-        shell: bash
-        run: |
-          echo ::set-output name=TAG::${GITHUB_REF/refs\/tags\//}
-      - uses: actions/download-artifact@v2
-        with:
-          name: paru-x86_64
-      - uses: actions/download-artifact@v2
-        with:
-          name: paru-aarch64
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.tags.outputs.tag }}
-          release_name: ${{ steps.tags.outputs.tag }}
-          draft: true
-          prerelease: false
-      - name: Upload x86_64 asset
-        id: upload-release-asset-x86_64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./paru-x86_64.tar.zst
-          asset_name: paru-${{ steps.tags.outputs.tag }}-x86_64.tar.zst
-          asset_content_type: application/tar+zstd
-      - name: Upload aarch64 asset
-        id: upload-release-asset-aarch64
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./paru-aarch64.tar.zst
-          asset_name: paru-${{ steps.tags.outputs.tag }}-aarch64.tar.zst
-          asset_content_type: application/tar+zstd
+          repo_token: ${{ github.token }}
+          file_glob: true
+          file: paru-*-*.tar.zst
+          tag: ${{ github.ref }}
