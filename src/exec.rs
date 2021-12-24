@@ -90,7 +90,7 @@ pub fn command_err<C: AsRef<OsStr>, S: AsRef<OsStr>>(cmd: C, args: &[S]) -> Stri
 
 fn command_status<C: AsRef<OsStr>, S: AsRef<OsStr>, P: AsRef<Path>>(
     cmd: C,
-    dir: P,
+    dir: Option<P>,
     args: &[S],
 ) -> Result<Status> {
     let term = &*CAUGHT_SIGNAL;
@@ -125,7 +125,7 @@ pub fn command<C: AsRef<OsStr>, S: AsRef<OsStr>, P: AsRef<Path>>(
 
 pub fn command_output<C: AsRef<OsStr>, S: AsRef<OsStr>, P: AsRef<Path>>(
     cmd: C,
-    dir: P,
+    dir: Option<P>,
     args: &[S],
 ) -> Result<Output> {
     let term = &*CAUGHT_SIGNAL;
@@ -165,7 +165,7 @@ fn sudo_loop<S: AsRef<OsStr>>(sudo: &str, flags: &[S]) -> Result<()> {
 }
 
 fn update_sudo<S: AsRef<OsStr>>(sudo: &str, flags: &[S]) -> Result<()> {
-    command_status(sudo, ".", flags)?;
+    command_status(sudo, None, flags)?;
     Ok(())
 }
 
@@ -201,9 +201,9 @@ pub fn pacman<S: AsRef<str> + Display + std::fmt::Debug>(
         cmd_args.push(args.bin.as_ref());
         let args = args.args();
         cmd_args.extend(args.iter().map(|s| s.as_str()));
-        command_status(&config.sudo_bin, ".", &cmd_args)
+        command_status(&config.sudo_bin, None, &cmd_args)
     } else {
-        command_status(args.bin.as_ref(), ".", &args.args())
+        command_status(args.bin.as_ref(), None, &args.args())
     }
 }
 
@@ -221,9 +221,9 @@ pub fn pacman_output<S: AsRef<str> + Display + std::fmt::Debug>(
         cmd_args.push(args.bin.as_ref());
         let args = args.args();
         cmd_args.extend(args.iter().map(|s| s.as_str()));
-        command_output(&config.sudo_bin, ".", &cmd_args)
+        command_output(&config.sudo_bin, None, &cmd_args)
     } else {
-        command_output(args.bin.as_ref(), ".", &args.args())
+        command_output(args.bin.as_ref(), None, &args.args())
     }
 }
 
@@ -236,5 +236,5 @@ pub fn makepkg<S: AsRef<OsStr>>(config: &Config, dir: &Path, args: &[S]) -> Resu
 pub fn makepkg_output<S: AsRef<OsStr>>(config: &Config, dir: &Path, args: &[S]) -> Result<Output> {
     let mut cmd_args = config.mflags.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
     cmd_args.extend(args.iter().map(|s| s.as_ref()));
-    command_output(&config.makepkg_bin, dir, &cmd_args)
+    command_output(&config.makepkg_bin, Some(dir), &cmd_args)
 }
